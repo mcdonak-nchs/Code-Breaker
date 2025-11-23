@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Four-Lock Sequential Escape</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['"Courier New"', 'monospace']
+                    },
+                    colors: {
+                        'primary-dark': '#1e293b',
+                        'secondary-light': '#f0f4f8',
+                        'accent': '#ef4444', 
+                        'success': '#10b981', 
+                        'bg-dark': '#0f172a',
+                        'lock-unsolved': '#374151',
+                        'lock-solved': '#059669',
+                        'stage-locked': '#374151',
+                        'gemini-blue': '#4285F4'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+
+        .lock-container {
+            background: linear-gradient(145deg, #1f2937, #111827);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        .dial {
+            background-color: #0f172a;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+            -webkit-appearance: none;
+            -moz-appearance: textfield;
+            transition: all 0.1s ease;
+        }
+        .dial::-webkit-outer-spin-button, .dial::-webkit-inner-spin-button {
+            -webkit-appearance: none; margin: 0;
+        }
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+            transform: translate3d(0, 0, 0);
+        }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .equation {
+            font-size: 1.0rem;
+            line-height: 1.4;
+            font-family: 'Courier New', monospace;
+            white-space: pre;
+        }
+        .clue-badge {
+            min-width: 2rem;
+            height: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        /* Fade-in effect for revealed elements */
+        .fade-in {
+            opacity: 0;
+            animation: fadeIn 1s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            border-top: 4px solid #4285F4;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-bg-dark text-secondary-light min-h-screen flex items-start justify-center p-4 font-sans">
+
+    <div id="game-container" class="w-full max-w-4xl mx-auto space-y-8">
+        
+        <!-- Game Title and Description -->
+        <header class="text-center space-y-2 pt-6">
+            <h1 class="text-4xl font-bold text-accent">THE SEQUENTIAL QUAD-LOCK</h1>
+            <p class="text-lg text-gray-400">Solve the problems for the current stage to reveal the next lock.</p>
+            <p class="text-sm text-gray-500 italic">Hint: The 6-digit code for each lock is the absolute value of the solutions in the order: $|x_1||y_1||x_2||y_2||x_3||y_3|$.</p>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Puzzle Area (Clues 1-12) -->
+            <div id="puzzle-area" class="lg:col-span-2 space-y-6 p-6 md:p-8 bg-primary-dark rounded-xl shadow-2xl">
+                <h2 class="text-2xl font-semibold border-b border-gray-700 pb-3 mb-4 text-white">The Twelve Problems (Stage 1 Active)</h2>
+
+                <!-- AI and TTS Utility Buttons -->
+                <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mb-4">
+                    <button id="hint-button" onclick="getHint()" class="flex items-center justify-center space-x-2 w-full sm:w-1/2 py-2 rounded-lg font-bold bg-gemini-blue hover:bg-blue-600 transition text-white disabled:opacity-50">
+                        <span id="hint-text">✨ AI Math Tutor Hint</span>
+                        <div id="hint-spinner" class="loading-spinner hidden"></div>
+                    </button>
+                    <button id="tts-button" onclick="readProblemsAloud()" class="flex items-center justify-center space-x-2 w-full sm:w-1/2 py-2 rounded-lg font-bold bg-green-500 hover:bg-green-600 transition text-white disabled:opacity-50">
+                        <span id="tts-text">🎧 Read Problems Aloud</span>
+                        <div id="tts-spinner" class="loading-spinner hidden"></div>
+                    </button>
+                </div>
+
+                <!-- Hint Output Area -->
+                <div id="hint-output" class="hidden p-4 bg-gray-700 border-l-4 border-gemini-blue rounded-r-lg text-sm text-gray-200 shadow-lg">
+                    <p class="font-bold text-gemini-blue mb-1">AI Tutor:</p>
+                    <p id="hint-content"></p>
+                    <div id="hint-sources" class="mt-2 text-xs text-gray-400 italic"></div>
+                </div>
+
+
+                <!-- Lock 1 Clues (P1, P2, P3) - Always visible -->
+                <h3 class="text-xl font-bold text-yellow-400 mt-6 mb-2">Lock 1: Problems 1, 2, 3</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="stage-1-problems">
+                    <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-1">
+                        <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">1</div>
+                        <pre class="equation">3x + 2y = 9
+x + 2y = 7</pre>
+                    </div>
+                    <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-1">
+                        <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">2</div>
+                        <pre class="equation">5x + y = 14
+3x + y = 10</pre>
+                    </div>
+                    <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-1">
+                        <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">3</div>
+                        <pre class="equation">9x + 5y = 50
+12x + 5y = 65</pre>
+                    </div>
+                </div>
+
+                <!-- Lock 2 Clues (P4, P5, P6) - Initially hidden -->
+                <div id="clues-2" class="hidden fade-in">
+                    <h3 class="text-xl font-bold text-yellow-400 mt-6 mb-2">Lock 2: Problems 4, 5, 6</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="stage-2-problems">
+                        <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-2">
+                            <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">4</div>
+                            <pre class="equation">4x + y = 37
+2x - y = 17</pre>
+                        </div>
+                        <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-2">
+                            <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">5</div>
+                            <pre class="equation">x + 2y = 22
+2x + y = 20</pre>
+                        </div>
+                        <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-2">
+                            <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">6</div>
+                            <pre class="equation">x - y = -1
+2x + y = 4</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lock 3 Clues (P7, P8, P9) - Initially hidden -->
+                <div id="clues-3" class="hidden fade-in">
+                    <h3 class="text-xl font-bold text-yellow-400 mt-6 mb-2">Lock 3: Problems 7, 8, 9</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="stage-3-problems">
+                        <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-3">
+                            <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">7</div>
+                            <pre class="equation">2x - y = 14
+5x + y = 14</pre>
+                        </div>
+                        <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-3">
+                            <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">8</div>
+                            <pre class="equation">x + y = -7
+x - y = -3</pre>
+                        </div>
+                        <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-3">
+                            <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">9</div>
+                            <pre class="equation">2x + 3y = 1
+5x + 4y = -1</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lock 4 Clues (P10, P11, P12) - Initially hidden -->
+                <div id="clues-4" class="hidden fade-in">
+                    <h3 class="text-xl font-bold text-yellow-400 mt-6 mb-2">Lock 4: Problems 10, 11, 12</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="stage-4-problems">
+                        <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-4">
+                            <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">10</div>
+                            <pre class="equation">3x + 4y = 9  
+2x - y = -16</pre>
+                        </div>
+                        <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-4">
+                            <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">11</div>
+                            <pre class="equation">6x - 5y = -32
+5x + 4y = 6</pre>
+                        </div>
+                        <div class="p-3 bg-gray-800 rounded-lg shadow-inner problem-set-4">
+                            <div class="clue-badge bg-blue-600 rounded-full text-white font-bold mb-1">12</div>
+                            <pre class="equation">2x - y = -9 
+5x + 4y = 10</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lock Interface Area -->
+            <div class="lg:col-span-1 space-y-6 p-6 md:p-8 lock-container rounded-xl shadow-2xl sticky top-4 self-start">
+                <h2 class="text-2xl font-bold text-gray-300 border-b border-gray-700 pb-3">Security Panel</h2>
+                
+                <div id="locks-container" class="space-y-6">
+                    <!-- Lock 1 - Always visible (Now 6 Digits) -->
+                    <div class="lock-card p-4 rounded-xl shadow-xl bg-gray-800 border-2 border-lock-unsolved" id="lock-card-1">
+                        <h3 class="text-lg font-semibold flex items-center justify-between">
+                            <span>Lock 1 (P1, P2, P3)</span>
+                            <span class="status-badge text-xs px-2 py-1 rounded-full bg-lock-unsolved text-white" id="status-badge-1">LOCKED</span>
+                        </h3>
+                        <div class="flex space-x-1 mt-3 justify-center">
+                            <!-- Digit 1 (|x1|) -->
+                            <input type="number" id="lock1_digit1" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <!-- Digit 2 (|y1|) -->
+                            <input type="number" id="lock1_digit2" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <span class="text-2xl text-gray-500">-</span>
+                            <!-- Digit 3 (|x2|) -->
+                            <input type="number" id="lock1_digit3" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <!-- Digit 4 (|y2|) -->
+                            <input type="number" id="lock1_digit4" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <span class="text-2xl text-gray-500">-</span>
+                            <!-- Digit 5 (|x3|) -->
+                            <input type="number" id="lock1_digit5" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <!-- Digit 6 (|y3|) -->
+                            <input type="number" id="lock1_digit6" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                        </div>
+                        <div class="text-center mt-3 h-4 text-sm font-medium text-gray-400" id="status-message-1"></div>
+                        <button onclick="attemptUnlock(1)" class="w-full mt-4 py-2 rounded-lg font-bold bg-accent hover:bg-red-600 transition text-white disabled:opacity-50">Unlock Lock 1</button>
+                    </div>
+                    
+                    <!-- Lock 2 - Initially hidden (Now 6 Digits) -->
+                    <div class="lock-card p-4 rounded-xl shadow-xl bg-gray-800 border-2 border-stage-locked hidden fade-in" id="lock-card-2">
+                        <h3 class="text-lg font-semibold flex items-center justify-between">
+                            <span>Lock 2 (P4, P5, P6)</span>
+                            <span class="status-badge text-xs px-2 py-1 rounded-full bg-lock-unsolved text-white" id="status-badge-2">LOCKED</span>
+                        </h3>
+                        <div class="flex space-x-1 mt-3 justify-center">
+                            <input type="number" id="lock2_digit1" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <input type="number" id="lock2_digit2" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <span class="text-2xl text-gray-500">-</span>
+                            <input type="number" id="lock2_digit3" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <input type="number" id="lock2_digit4" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <span class="text-2xl text-gray-500">-</span>
+                            <input type="number" id="lock2_digit5" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <input type="number" id="lock2_digit6" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                        </div>
+                        <div class="text-center mt-3 h-4 text-sm font-medium text-gray-400" id="status-message-2"></div>
+                        <button onclick="attemptUnlock(2)" class="w-full mt-4 py-2 rounded-lg font-bold bg-accent hover:bg-red-600 transition text-white disabled:opacity-50">Unlock Lock 2</button>
+                    </div>
+
+                    <!-- Lock 3 - Initially hidden (Now 6 Digits) -->
+                    <div class="lock-card p-4 rounded-xl shadow-xl bg-gray-800 border-2 border-stage-locked hidden fade-in" id="lock-card-3">
+                        <h3 class="text-lg font-semibold flex items-center justify-between">
+                            <span>Lock 3 (P7, P8, P9)</span>
+                            <span class="status-badge text-xs px-2 py-1 rounded-full bg-lock-unsolved text-white" id="status-badge-3">LOCKED</span>
+                        </h3>
+                        <div class="flex space-x-1 mt-3 justify-center">
+                            <input type="number" id="lock3_digit1" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <input type="number" id="lock3_digit2" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <span class="text-2xl text-gray-500">-</span>
+                            <input type="number" id="lock3_digit3" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <input type="number" id="lock3_digit4" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <span class="text-2xl text-gray-500">-</span>
+                            <input type="number" id="lock3_digit5" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <input type="number" id="lock3_digit6" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                        </div>
+                        <div class="text-center mt-3 h-4 text-sm font-medium text-gray-400" id="status-message-3"></div>
+                        <button onclick="attemptUnlock(3)" class="w-full mt-4 py-2 rounded-lg font-bold bg-accent hover:bg-red-600 transition text-white disabled:opacity-50">Unlock Lock 3</button>
+                    </div>
+                    
+                    <!-- Lock 4 - Initially hidden (Now 6 Digits) -->
+                    <div class="lock-card p-4 rounded-xl shadow-xl bg-gray-800 border-2 border-stage-locked hidden fade-in" id="lock-card-4">
+                        <h3 class="text-lg font-semibold flex items-center justify-between">
+                            <span>Lock 4 (P10, P11, P12)</span>
+                            <span class="status-badge text-xs px-2 py-1 rounded-full bg-lock-unsolved text-white" id="status-badge-4">LOCKED</span>
+                        </h3>
+                        <div class="flex space-x-1 mt-3 justify-center">
+                            <input type="number" id="lock4_digit1" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <input type="number" id="lock4_digit2" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <span class="text-2xl text-gray-500">-</span>
+                            <input type="number" id="lock4_digit3" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <input type="number" id="lock4_digit4" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <span class="text-2xl text-gray-500">-</span>
+                            <input type="number" id="lock4_digit5" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                            <input type="number" id="lock4_digit6" min="0" max="9" maxlength="1" placeholder="-" class="dial w-8 h-12 text-xl text-center font-mono rounded-md border-gray-600 outline-none text-white">
+                        </div>
+                        <div class="text-center mt-3 h-4 text-sm font-medium text-gray-400" id="status-message-4"></div>
+                        <button onclick="attemptUnlock(4)" class="w-full mt-4 py-2 rounded-lg font-bold bg-accent hover:bg-red-600 transition text-white disabled:opacity-50">Unlock Lock 4</button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Final Success Message Modal -->
+        <div id="final-success-modal" class="hidden fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center p-4 z-50">
+            <div class="bg-gray-900 p-8 rounded-xl shadow-2xl text-center max-w-lg w-full border-4 border-success">
+                <svg class="w-24 h-24 text-success mx-auto mb-6 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <h2 class="text-4xl font-bold text-success mb-4">GRAND ESCAPE!</h2>
+                <p class="text-xl text-gray-200">All four security protocols have been bypassed in sequence.</p>
+                <p class="text-lg text-gray-400 mt-4">The complete sequence of 6-digit codes was:</p>
+                <div class="text-3xl font-mono mt-2 text-yellow-400 font-extrabold">132451 - 916812 - 465211 - 562425</div>
+            </div>
+        </div>
+        
+        <!-- Audio Player for TTS -->
+        <audio id="audio-player" class="hidden"></audio>
+
+    </div>
+
+    <script>
+        // The correct combinations for the four locks (6 digits: |x1||y1||x2||y2||x3||y3|)
+        const CORRECT_COMBINATIONS = {
+            // P1(1, 3), P2(2, 4), P3(5, 1)
+            1: "132451", 
+            // P4(9, 1), P5(6, 8), P6(1, 2)
+            2: "916812", 
+            // P7(4, -6), P8(-5, -2), P9(-1, 1) -> absolute values are used
+            3: "465211", 
+            // P10(-5, 6), P11(-2, 4), P12(-2, 5) -> absolute values are used
+            4: "562425"  
+        };
+
+        const CODE_LENGTH = 6;
+        const solvedLocks = { 1: false, 2: false, 3: false, 4: false };
+
+        // --- GEMINI API INTEGRATION CODE ---
+
+        const apiKey = ""; // API key is provided at runtime in the canvas environment
+        const LLM_MODEL = "gemini-2.5-flash-preview-09-2025";
+        const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+
+        /**
+         * Generic fetch function with exponential backoff.
+         */
+        async function geminiFetch(apiUrl, payload, maxRetries = 5, delay = 1000) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.status === 429 && i < maxRetries - 1) {
+                        // Too many requests (throttling), wait and retry
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2; // Exponential backoff
+                        continue;
+                    }
+                    
+                    if (!response.ok) {
+                        throw new Error(`API call failed with status: ${response.status}`);
+                    }
+
+                    return await response.json();
+
+                } catch (error) {
+                    console.error("Fetch attempt failed:", error);
+                    if (i === maxRetries - 1) throw error; // Throw after final failure
+                }
+            }
+        }
+        
+        /**
+         * Gets the current active stage (the first unsolved lock).
+         */
+        function getActiveStage() {
+            for (let i = 1; i <= 4; i++) {
+                if (!solvedLocks[i]) {
+                    return i;
+                }
+            }
+            return 4; // If all solved, default to 4 (game over)
+        }
+
+        /**
+         * Gets the combined equations for the current active stage.
+         */
+        function getEquationsForStage(stageNum) {
+            const problemContainers = document.querySelectorAll(`#stage-${stageNum}-problems .equation`);
+            let allEquations = [];
+            problemContainers.forEach(container => {
+                // Clean up whitespace and combine into a single string
+                const text = container.textContent.trim().replace(/\n/g, ' and ');
+                allEquations.push(text);
+            });
+            return allEquations.join('; ');
+        }
+
+        /**
+         * LLM Feature: Generates a hint for the current stage's problems.
+         */
+        async function getHint() {
+            const activeStage = getActiveStage();
+            const equations = getEquationsForStage(activeStage);
+            
+            const hintButton = document.getElementById('hint-button');
+            const hintText = document.getElementById('hint-text');
+            const hintSpinner = document.getElementById('hint-spinner');
+            const hintOutput = document.getElementById('hint-output');
+            const hintContent = document.getElementById('hint-content');
+            const hintSources = document.getElementById('hint-sources');
+
+            hintButton.disabled = true;
+            hintText.textContent = 'Generating Hint...';
+            hintSpinner.classList.remove('hidden');
+            hintOutput.classList.add('hidden');
+            
+            const systemPrompt = "You are a friendly, encouraging, and knowledgeable math tutor specializing in Systems of Linear Equations. Your goal is to provide a single, conceptual hint for solving the problems below, without giving the final numerical answer or the method explicitly. Suggest the *type* of method they should consider based on the structure of the equations (e.g., substitution if one variable is easy to isolate, or elimination if coefficients match/can be easily manipulated).";
+            const userQuery = `The student is currently trying to solve this set of systems of equations for Stage ${activeStage}: ${equations}. Provide a conceptual hint for the best general strategy for this entire set of problems (e.g. elimination, substitution, or scaling).`;
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${LLM_MODEL}:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            try {
+                const result = await geminiFetch(apiUrl, payload);
+                const candidate = result.candidates?.[0];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const text = candidate.content.parts[0].text;
+                    let sourcesHtml = '';
+                    const groundingMetadata = candidate.groundingMetadata;
+
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        const sources = groundingMetadata.groundingAttributions
+                            .map(attribution => ({ uri: attribution.web?.uri, title: attribution.web?.title }))
+                            .filter(source => source.uri && source.title);
+                        
+                        if (sources.length > 0) {
+                             sourcesHtml = '<p class="mt-2 text-xs text-gray-400 italic">Source(s): ';
+                             sources.forEach((s, index) => {
+                                 sourcesHtml += `<a href="${s.uri}" target="_blank" class="text-blue-400 hover:text-blue-300">${s.title}</a>${index < sources.length - 1 ? ', ' : ''}`;
+                             });
+                             sourcesHtml += '</p>';
+                        }
+                    }
+
+                    hintContent.textContent = text;
+                    hintSources.innerHTML = sourcesHtml;
+                    hintOutput.classList.remove('hidden');
+
+                } else {
+                    hintContent.textContent = "Sorry, I couldn't generate a helpful hint right now. Try again!";
+                    hintOutput.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error("Gemini Hint Error:", error);
+                hintContent.textContent = "An error occurred while contacting the AI tutor. Please check your network connection.";
+                hintOutput.classList.remove('hidden');
+            } finally {
+                hintButton.disabled = false;
+                hintText.textContent = '✨ AI Math Tutor Hint';
+                hintSpinner.classList.add('hidden');
+            }
+        }
+        
+        // --- TTS UTILITY FUNCTIONS ---
+
+        // Converts Base64 string to ArrayBuffer
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // Converts PCM data to a WAV Blob (required for playback)
+        function pcmToWav(pcm16, sampleRate) {
+            const numChannels = 1;
+            const bytesPerSample = 2; // 16-bit PCM
+
+            const buffer = new ArrayBuffer(44 + pcm16.length * bytesPerSample);
+            const view = new DataView(buffer);
+
+            // RIFF chunk descriptor
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + pcm16.length * bytesPerSample, true);
+            writeString(view, 8, 'WAVE');
+
+            // FMT sub-chunk
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);          // Sub-chunk size (16 for PCM)
+            view.setUint16(20, 1, true);           // Audio format (1 for PCM)
+            view.setUint16(22, numChannels, true); // Number of channels
+            view.setUint32(24, sampleRate, true);  // Sample rate
+            view.setUint32(28, sampleRate * numChannels * bytesPerSample, true); // Byte rate
+            view.setUint16(32, numChannels * bytesPerSample, true); // Block align
+            view.setUint16(34, 16, true);          // Bits per sample
+
+            // Data sub-chunk
+            writeString(view, 36, 'data');
+            view.setUint32(40, pcm16.length * bytesPerSample, true);
+
+            // Write the PCM data
+            for (let i = 0; i < pcm16.length; i++) {
+                view.setInt16(44 + i * bytesPerSample, pcm16[i], true);
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        /**
+         * TTS Feature: Reads the current stage's problems aloud.
+         */
+        async function readProblemsAloud() {
+            const activeStage = getActiveStage();
+            const problemText = getEquationsForStage(activeStage).replace(/ and /g, '. The second equation is: ').replace(/; /g, '. Next problem. The first equation is: ');
+            
+            const ttsButton = document.getElementById('tts-button');
+            const ttsText = document.getElementById('tts-text');
+            const ttsSpinner = document.getElementById('tts-spinner');
+            const audioPlayer = document.getElementById('audio-player');
+
+            ttsButton.disabled = true;
+            ttsText.textContent = 'Generating Audio...';
+            ttsSpinner.classList.remove('hidden');
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${apiKey}`;
+            const userPrompt = `Read the following math problems clearly: The problems for stage ${activeStage} are: The first equation is: ${problemText}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userPrompt }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } } // Use a clear, informative voice
+                    }
+                },
+            };
+
+            try {
+                const result = await geminiFetch(apiUrl, payload);
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
+                    // Extract sample rate from mimeType if available, default to 16000
+                    const match = mimeType.match(/rate=(\d+)/);
+                    const sampleRate = match ? parseInt(match[1], 10) : 16000;
+                    
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    // API returns signed PCM16 audio data.
+                    const pcm16 = new Int16Array(pcmData);
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+
+                    audioPlayer.src = audioUrl;
+                    audioPlayer.play();
+
+                    audioPlayer.onended = () => {
+                        ttsButton.disabled = false;
+                        ttsText.textContent = '🎧 Read Problems Aloud';
+                        ttsSpinner.classList.add('hidden');
+                        URL.revokeObjectURL(audioUrl); // Clean up the object URL
+                    };
+
+                } else {
+                    console.error("TTS response missing audio data or invalid format.");
+                    alert("Failed to generate audio. Please check console for details.");
+                }
+
+            } catch (error) {
+                console.error("Gemini TTS Error:", error);
+                alert("An error occurred while generating audio. Please check your network connection.");
+            } finally {
+                // Ensure buttons are re-enabled if playback fails immediately
+                if(audioPlayer.paused && audioPlayer.src === "") {
+                    ttsButton.disabled = false;
+                    ttsText.textContent = '🎧 Read Problems Aloud';
+                    ttsSpinner.classList.add('hidden');
+                }
+            }
+        }
+        
+        // --- CORE GAME LOGIC ---
+        
+        /**
+         * Gets the HTML elements for a specific lock number.
+         * @param {number} lockNum 
+         * @returns {object}
+         */
+        function getLockElements(lockNum) {
+            const digits = [];
+            for(let i = 1; i <= CODE_LENGTH; i++) {
+                digits.push(document.getElementById(`lock${lockNum}_digit${i}`));
+            }
+
+            return {
+                card: document.getElementById(`lock-card-${lockNum}`),
+                digits: digits,
+                statusMessage: document.getElementById(`status-message-${lockNum}`),
+                statusBadge: document.getElementById(`status-badge-${lockNum}`),
+                button: document.querySelector(`#lock-card-${lockNum} button`)
+            };
+        }
+
+        /**
+         * Attaches event listeners for auto-tabbing on input fields.
+         */
+        function setupInputListeners() {
+            // Setup listeners for all inputs, even hidden ones. They will only be interactive when revealed.
+            for (let i = 1; i <= 4; i++) {
+                const elements = getLockElements(i);
+                elements.digits.forEach((input, index) => {
+                    // Prevent inputs from having more than one digit
+                    input.addEventListener('input', (e) => {
+                        if (e.target.value.length > 1) {
+                            e.target.value = e.target.value.slice(0, 1);
+                        }
+                        // Auto-tab to the next input
+                        if (e.target.value.length === 1 && index < elements.digits.length - 1) {
+                            elements.digits[index + 1].focus();
+                        }
+                    });
+
+                    // Auto-tab backward on backspace
+                    input.addEventListener('keyup', (e) => {
+                        if (e.key === 'Backspace' && e.target.value.length === 0 && index > 0) {
+                            elements.digits[index - 1].focus();
+                        }
+                    });
+                });
+            }
+        }
+        
+        /**
+         * Reveals the next set of clues and the corresponding lock card with a fade-in effect.
+         * @param {number} nextLockNum 
+         */
+        function revealNextStage(nextLockNum) {
+            const nextClues = document.getElementById(`clues-${nextLockNum}`);
+            const nextLockCard = document.getElementById(`lock-card-${nextLockNum}`);
+            const puzzleTitle = document.getElementById('puzzle-area').querySelector('h2');
+            
+            // Update puzzle title to reflect the active stage
+            puzzleTitle.textContent = `The Twelve Problems (Stage ${nextLockNum} Active)`;
+
+            if (nextClues) {
+                // Show clues
+                nextClues.classList.remove('hidden');
+            }
+
+            if (nextLockCard) {
+                // Show next lock
+                nextLockCard.classList.remove('hidden');
+                nextLockCard.classList.remove('border-stage-locked');
+                nextLockCard.classList.add('border-lock-unsolved');
+            }
+            
+            // Clear any previous hint when stage changes
+            document.getElementById('hint-output').classList.add('hidden');
+        }
+
+
+        /**
+         * Attempts to unlock a specific lock.
+         * @param {number} lockNum 
+         */
+        function attemptUnlock(lockNum) {
+            if (solvedLocks[lockNum]) return; // Already solved
+
+            const elements = getLockElements(lockNum);
+            const currentCode = elements.digits.map(input => input.value).join('');
+            const correctCode = CORRECT_COMBINATIONS[lockNum];
+
+            if (currentCode.length !== CODE_LENGTH) {
+                lockFailure(lockNum, `Enter all ${CODE_LENGTH} digits.`);
+                return;
+            }
+
+            if (currentCode === correctCode) {
+                lockSuccess(lockNum, elements);
+                // NEW: Reveal the next stage if it exists
+                if (lockNum < 4) {
+                    revealNextStage(lockNum + 1);
+                }
+            } else {
+                let correctCount = 0;
+                for (let i = 0; i < CODE_LENGTH; i++) {
+                    if (currentCode[i] === correctCode[i]) {
+                        correctCount++;
+                    }
+                }
+                
+                let message = correctCount === 0 
+                    ? "Incorrect code." 
+                    : `${correctCount} digit(s) correct.`;
+                
+                lockFailure(lockNum, message);
+            }
+        }
+
+        /**
+         * Handles the visual state for a failed unlock attempt.
+         * @param {number} lockNum 
+         * @param {string} message 
+         */
+        function lockFailure(lockNum, message) {
+            const elements = getLockElements(lockNum);
+            elements.statusMessage.textContent = message;
+            
+            // Add shake effect to the card
+            elements.card.classList.add('shake');
+            setTimeout(() => {
+                elements.card.classList.remove('shake');
+                elements.statusMessage.textContent = "";
+            }, 1000);
+        }
+
+        /**
+         * Handles the visual state for a successful unlock.
+         * @param {number} lockNum 
+         * @param {object} elements 
+         */
+        function lockSuccess(lockNum, elements) {
+            solvedLocks[lockNum] = true;
+            
+            elements.statusMessage.textContent = `CODE ${CORRECT_COMBINATIONS[lockNum]} ACCEPTED.`;
+            elements.statusMessage.classList.add('text-success');
+
+            // Update card styling
+            elements.card.classList.remove('border-lock-unsolved');
+            elements.card.classList.add('border-lock-solved');
+
+            // Update badge
+            elements.statusBadge.textContent = "UNLOCKED";
+            elements.statusBadge.classList.remove('bg-lock-unsolved');
+            elements.statusBadge.classList.add('bg-lock-solved');
+
+            // Disable inputs and button
+            elements.digits.forEach(input => {
+                input.disabled = true;
+                input.classList.remove('text-white');
+                input.classList.add('text-success');
+            });
+            elements.button.disabled = true;
+            elements.button.textContent = "SOLVED";
+
+            // Check if all locks are open
+            checkGameCompletion();
+        }
+
+        /**
+         * Checks if all four locks are solved and shows the final modal.
+         */
+        function checkGameCompletion() {
+            const allSolved = Object.values(solvedLocks).every(isSolved => isSolved === true);
+
+            if (allSolved) {
+                // Delay showing the final modal slightly after the last lock is marked SOLVED
+                setTimeout(() => {
+                    document.getElementById('final-success-modal').classList.remove('hidden');
+                }, 500);
+            }
+        }
+
+        // Initialize listeners when the window loads
+        window.onload = setupInputListeners;
+    </script>
+</body>
+</html>
